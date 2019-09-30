@@ -1,13 +1,21 @@
 package org.demo
 
 import com.datastax.spark.connector.cql.CassandraConnector
-import com.datastax.spark.connector.embedded.{EmbeddedCassandra, SparkTemplate, YamlTransformations}
-import org.apache.spark.sql.SparkSession
+import com.datastax.spark.connector.embedded.{
+  EmbeddedCassandra,
+  SparkTemplate,
+  YamlTransformations
+}
+import org.apache.spark.sql.{Dataset, SparkSession}
 import org.apache.spark.sql.cassandra._
 import org.apache.spark.sql.types._
 import org.scalatest.{BeforeAndAfterAll, FunSuite}
 
-class LongTweetsFilterSpec extends FunSuite with BeforeAndAfterAll with SparkTemplate with EmbeddedCassandra {
+class LongTweetsFilterSpec
+    extends FunSuite
+    with BeforeAndAfterAll
+    with SparkTemplate
+    with EmbeddedCassandra {
   override def clearCache(): Unit = CassandraConnector.evictCache()
 
   //Sets up CassandraConfig and SparkContext
@@ -19,8 +27,10 @@ class LongTweetsFilterSpec extends FunSuite with BeforeAndAfterAll with SparkTem
   override def beforeAll(): Unit = {
     super.beforeAll()
     connector.withSessionDo { session =>
-      session.execute("CREATE KEYSPACE IF NOT EXISTS test WITH replication = {'class':'SimpleStrategy', 'replication_factor':1};")
-      session.execute("CREATE TABLE test.long_tweets(timestamp timestamp, username text, text text, PRIMARY KEY(timestamp, username));")
+      session.execute(
+        "CREATE KEYSPACE IF NOT EXISTS test WITH replication = {'class':'SimpleStrategy', 'replication_factor':1};")
+      session.execute(
+        "CREATE TABLE test.long_tweets(timestamp timestamp, username text, text text, PRIMARY KEY(timestamp, username));")
     }
   }
 
@@ -31,16 +41,24 @@ class LongTweetsFilterSpec extends FunSuite with BeforeAndAfterAll with SparkTem
     import spark.implicits._
 
     // define a schema for the data in the tweets CSV
-    val tweetsSchema = StructType(Array(StructField("timestamp", LongType, true), StructField("username", StringType, true), StructField("text", StringType, true)))
+    val tweetsSchema = StructType(
+      Array(StructField("timestamp", LongType, nullable = true),
+            StructField("username", StringType, nullable = true),
+            StructField("text", StringType, nullable = true)))
 
     // read the csv
-    val lines = sparkSession.read.option("header", "false").schema(tweetsSchema).csv("./src/test/resources/tweets.csv").as[Tweet]
+    val lines = sparkSession.read
+      .option("header", "false")
+      .schema(tweetsSchema)
+      .csv("./src/test/resources/tweets.csv")
+      .as[Tweet]
 
-    val longTweets = LongTweetsFilter.filterLongTweets(lines)
+    val longTweets: Dataset[Tweet] = LongTweetsFilter.filterLongTweets(lines)
 
     longTweets.write.cassandraFormat("long_tweets", "test").save()
 
-    val cassandraLongTweets = spark.read.cassandraFormat("long_tweets", "test").load()
+    val cassandraLongTweets =
+      spark.read.cassandraFormat("long_tweets", "test").load()
 
     cassandraLongTweets.collect().foreach(tweet => assert(tweet.length > 144))
   }
